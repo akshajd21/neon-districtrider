@@ -1,0 +1,476 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#070b18">
+<title>Neon District Riders</title>
+<style>
+:root{--cyan:#00eaff;--pink:#ff398d;--bg:#070b18}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:white;font-family:Arial,sans-serif;overflow:hidden}
+canvas{display:block;width:100vw;height:100dvh;touch-action:none}
+button,select{font:inherit;color:white;background:#101c32;border:1px solid #00eaff88;border-radius:10px;padding:10px 14px;cursor:pointer}
+button:active{background:#087d94}
+#hud{position:fixed;inset:12px 12px auto;display:flex;gap:8px;align-items:flex-start;justify-content:space-between;pointer-events:none}
+.panel{background:#071322d9;border:1px solid #00eaff66;border-radius:12px;padding:10px 13px;backdrop-filter:blur(8px)}
+#hud button,#hud select{pointer-events:auto}
+#speed{font-size:27px;font-weight:bold;color:var(--cyan)}
+.small{font-size:12px;color:#b6c9df}
+#controls{position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;padding:0 18px;pointer-events:none}
+.pad{display:flex;gap:10px;pointer-events:auto}
+.ctrl{width:64px;height:64px;border-radius:50%;background:#071322d9;font-size:23px;touch-action:none}
+#overlay{position:fixed;inset:0;background:linear-gradient(135deg,#060b18ee,#08182beF);display:flex;align-items:center;justify-content:center;padding:18px;z-index:5}
+#menu{width:min(470px,100%);max-height:92dvh;overflow:auto;text-align:center;border:1px solid #00eaff77;border-radius:20px;padding:25px;background:#081322}
+h1{font-size:clamp(27px,6vw,44px);margin:5px 0;color:var(--cyan);text-shadow:0 0 22px #00eaff66}
+.menurow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:13px 0}
+.menurow>*{flex:1;min-width:110px}
+.primary{background:linear-gradient(110deg,#007d99,#6942b9);font-weight:bold;padding:14px}
+#notice{position:fixed;bottom:95px;left:50%;transform:translateX(-50%);background:#071322e8;padding:9px 13px;border-radius:9px;pointer-events:none;white-space:nowrap;font-size:12px}
+.hidden{display:none!important}
+#mobileHint{font-size:12px;color:#a9c1d7;line-height:1.6}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="panel">
+    <div class="small">NEON DISTRICT RIDERS</div>
+    <div id="speed">000 <span style="font-size:12px">KM/H</span></div>
+    <div id="distance" class="small">DISTANCE: 0 m</div>
+  </div>
+  <div class="panel" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <button id="horn">📢 Horn</button>
+    <button id="pause">Ⅱ Pause</button>
+    <button id="menuBtn">☰ Menu</button>
+  </div>
+</div>
+
+<div id="controls" class="hidden">
+  <div class="pad">
+    <button class="ctrl" id="left">◀</button>
+    <button class="ctrl" id="right">▶</button>
+  </div>
+  <div class="pad">
+    <button class="ctrl" id="brake">▼</button>
+    <button class="ctrl" id="gas">▲</button>
+  </div>
+</div>
+<div id="notice" class="hidden">WASD / Arrow keys to drive</div>
+
+<div id="overlay">
+  <div id="menu">
+    <div style="font-size:42px">🏙️🏎️</div>
+    <h1>NEON DISTRICT<br>RIDERS</h1>
+    <p style="color:#b5c8dd">OPEN CITY • NIGHT DRIVE • METRO LINES</p>
+    <div class="menurow">
+      <button class="primary" id="start">▶ START DRIVING</button>
+    </div>
+    <div class="menurow">
+      <label class="panel" style="flex:1">Car color<br>
+        <select id="carColor" style="margin-top:8px;width:100%">
+          <option value="#00eaff">Neon cyan</option>
+          <option value="#ff398d">Neon pink</option>
+          <option value="#f4f4ff">Pearl white</option>
+          <option value="#ffb52e">Sport orange</option>
+          <option value="#8a65ff">Electric purple</option>
+          <option value="#45e87b">Racing green</option>
+        </select>
+      </label>
+      <label class="panel" style="flex:1">Character<br>
+        <select id="character" style="margin-top:8px;width:100%">
+          <option value="#e9b58d">City rider</option>
+          <option value="#8b583b">Street racer</option>
+          <option value="#f1d0b5">Night driver</option>
+        </select>
+      </label>
+    </div>
+    <div class="menurow">
+      <button id="emote">😎 Rider emote</button>
+      <button id="voice">🎙️ Multiplayer voice</button>
+    </div>
+    <p id="voiceInfo" class="small">Voice chat is multiplayer-only and needs a voice server.</p>
+    <hr style="border-color:#263c55">
+    <p id="mobileHint">
+      DESKTOP: WASD or arrow keys • Space: brake • H: horn<br>
+      MOBILE / TV: use on-screen controls or a connected keyboard.<br>
+      Drive through the city, avoid traffic and watch the metro trains.
+    </p>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const $ = id => document.getElementById(id);
+
+let W=innerWidth,H=innerHeight,DPR=1;
+let running=false,paused=false,frame=0,distance=0,speed=0;
+let steering=0,gas=false,braking=false;
+let carColor="#00eaff",skin="#e9b58d";
+let emoteUntil=0,voiceStream=null;
+const keys={};
+const traffic=[];
+const buildings=[];
+const particles=[];
+let metro={progress:0,lane:0.5};
+
+function resize(){
+  W=innerWidth;H=innerHeight;
+  DPR=Math.min(devicePixelRatio||1,2);
+  canvas.width=Math.round(W*DPR);
+  canvas.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  createBuildings();
+}
+addEventListener("resize",resize);
+
+function rand(a,b){return a+Math.random()*(b-a)}
+function createBuildings(){
+  buildings.length=0;
+  for(let side of [-1,1]){
+    let z=0;
+    while(z<5000){
+      buildings.push({side,z,w:rand(28,85),h:rand(70,250),
+        color:["#111e3c","#152744","#19213b","#182d40"][Math.floor(Math.random()*4)],
+        lights:Array.from({length:18},()=>Math.random()>.38)});
+      z+=rand(100,230);
+    }
+  }
+}
+function spawnTraffic(){
+  traffic.length=0;
+  for(let i=0;i<12;i++){
+    traffic.push({z:rand(120,1800),lane:Math.floor(rand(0,4)),
+      color:["#e8eaf5","#e94f74","#f4b844","#8c83ff","#46c9a0"][i%5],
+      w:rand(.86,1.13),type:Math.random()<.2?"van":"car"});
+  }
+}
+function roadWidth(z){
+  return Math.min(W*.83,Math.max(W*.24,W*.83*(.22+.78*z)));
+}
+function roadY(z){return H*.39+z*H*.78}
+function roadX(z){return W/2+Math.sin(distance*.00025+z*1.4)*z*W*.06}
+function laneX(lane,z){
+  const width=roadWidth(z);
+  return roadX(z)-width/2+width*(lane+.5)/4;
+}
+function poly(points,fill,stroke){
+  ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);
+  for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);
+  ctx.closePath();ctx.fillStyle=fill;ctx.fill();
+  if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}
+}
+function roundedRect(x,y,w,h,r,color){
+  ctx.fillStyle=color;ctx.beginPath();
+  ctx.roundRect(x,y,w,h,r);ctx.fill();
+}
+function drawBackground(){
+  let sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,"#050918");sky.addColorStop(.6,"#162344");sky.addColorStop(1,"#27334a");
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+
+  // Moon and skyline glow
+  ctx.fillStyle="#d7f1ff";ctx.globalAlpha=.8;
+  ctx.beginPath();ctx.arc(W*.79,H*.13,Math.min(W,H)*.035,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=1;
+  ctx.fillStyle="#101a32";
+  for(let i=0;i<30;i++){
+    let x=i*W/25-(distance*.025%100);
+    let h=35+(i*73%100);
+    ctx.fillRect(x,H*.39-h,30,h);
+  }
+  // Neon skyline signs
+  for(let i=0;i<8;i++){
+    let x=(i*W/7+distance*.015)%W;
+    ctx.fillStyle=i%2?"#ff398d":"#00eaff";
+    ctx.globalAlpha=.28;ctx.fillRect(x,H*.28,2,24);ctx.globalAlpha=1;
+  }
+}
+function drawCity(){
+  for(const b of buildings){
+    let z=((b.z-distance*.22)%5000+5000)%5000;
+    let depth=.03+z/5000;
+    if(depth<.04)continue;
+    let y=H*.38-depth*H*.65;
+    let x=W/2+b.side*(W*.17+depth*W*.68);
+    let w=b.w*(.12+depth),h=b.h*(.12+depth);
+    ctx.fillStyle=b.color;ctx.fillRect(x-w/2,y-h,w,h);
+    ctx.fillStyle="#00eaff";
+    ctx.globalAlpha=.15;
+    ctx.fillRect(x-w/2,y-h,w,2);
+    ctx.globalAlpha=1;
+    let cols=Math.max(1,Math.floor(w/13));
+    for(let c=0;c<cols;c++)for(let r=0;r<Math.min(12,h/15);r++){
+      if((c*7+r*3+Math.floor(b.z))%4===0){
+        ctx.fillStyle=(c+r)%3===0?"#ffbb5d":"#74d9ff";
+        ctx.globalAlpha=.45;
+        ctx.fillRect(x-w/2+c*13+3,y-h+r*15+5,4,5);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+}
+function drawRoad(){
+  const segments=65;
+  for(let i=segments;i>0;i--){
+    let z1=i/segments,z2=(i-1)/segments;
+    let x1=roadX(z1),x2=roadX(z2);
+    let w1=roadWidth(z1),w2=roadWidth(z2);
+    let y1=roadY(z1),y2=roadY(z2);
+    poly([[0,y1],[x1-w1/2,y1],[x2-w2/2,y2],[0,y2]],"#172d26");
+    poly([[x1+w1/2,y1],[W,y1],[W,y2],[x2+w2/2,y2]],"#172d26");
+    poly([[x1-w1/2,y1],[x1+w1/2,y1],[x2+w2/2,y2],[x2-w2/2,y2]],
+      Math.floor((distance/80+i)%2)?"#242b39":"#202735");
+    // Road shoulders
+    poly([[x1-w1/2,y1],[x1-w1/2+w1*.018,y1],[x2-w2/2+w2*.018,y2],[x2-w2/2,y2]],"#e7eaf5");
+    poly([[x1+w1/2-w1*.018,y1],[x1+w1/2,y1],[x2+w2/2,y2],[x2+w2/2-w2*.018,y2]],"#e7eaf5");
+    // Four lanes. Dividers remain continuous; no right-lane ramps.
+    for(let lane=1;lane<4;lane++){
+      let d1=x1-w1/2+w1*lane/4,d2=x2-w2/2+w2*lane/4;
+      let dash=((distance*.018+i*.14)%1)>.48;
+      if(dash){
+        poly([[d1-1.2,y1],[d1+1.2,y1],[d2+Math.max(.5,w2*.002),y2],[d2-Math.max(.5,w2*.002),y2]],"#d4d9e6");
+      }
+    }
+    // Central divider
+    poly([[x1-2,y1],[x1+2,y1],[x2+2,y2],[x2-2,y2]],"#aab4c7");
+  }
+}
+function drawFlyover(){
+  // Elevated flyover on the left, separate from the main road.
+  const top=H*.43,bottom=H*.56;
+  ctx.fillStyle="#374358";
+  ctx.beginPath();ctx.moveTo(0,top);ctx.lineTo(W*.28,top+10);
+  ctx.lineTo(W*.44,bottom);ctx.lineTo(W*.38,bottom+5);
+  ctx.lineTo(W*.22,top+25);ctx.lineTo(0,top+18);ctx.fill();
+  ctx.strokeStyle="#00eaff";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,top);ctx.lineTo(W*.28,top+10);ctx.stroke();
+  for(let x=20;x<W*.35;x+=55){
+    ctx.fillStyle="#59677c";
+    ctx.fillRect(x,H*.52,8,H*.17);
+  }
+}
+function drawMetro(){
+  // Separate elevated rail on the right side of the city.
+  const x=W*.84,y=H*.31;
+  ctx.fillStyle="#606b80";ctx.fillRect(x-4,y,8,H*.18);
+  ctx.fillStyle="#9da9bf";ctx.fillRect(x-9,y-3,18,4);
+  let t=(frame*1.8)% (W*.42+150);
+  let trainX=W*.59+t;
+  if(trainX>W+100)trainX=W*.59;
+  const tw=Math.max(30,W*.07),th=Math.max(14,H*.035);
+  roundedRect(trainX,y-th,tw,th,5,"#d7e7f4");
+  roundedRect(trainX+tw*.1,y-th*.75,tw*.8,th*.4,3,"#183951");
+  ctx.fillStyle="#00eaff";ctx.fillRect(trainX+tw*.1,y-th*.22,tw*.8,2);
+  for(let i=1;i<3;i++){
+    ctx.strokeStyle="#6c8299";ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(trainX+tw*i/3,y-th);ctx.lineTo(trainX+tw*i/3,y);ctx.stroke();
+  }
+}
+function drawCar(x,y,w,h,color,isPlayer=false){
+  ctx.save();ctx.translate(x,y);
+  // shadow
+  ctx.fillStyle="#02050b99";
+  ctx.beginPath();ctx.ellipse(0,h*.35,w*.67,h*.28,0,0,Math.PI*2);ctx.fill();
+  // wheels
+  ctx.fillStyle="#080b12";
+  roundedRect(-w*.51,-h*.05,w*.14,h*.35,4,"#090d15");
+  roundedRect(w*.37,-h*.05,w*.14,h*.35,4,"#090d15");
+  roundedRect(-w*.51,h*.52,w*.14,h*.35,4,"#090d15");
+  roundedRect(w*.37,h*.52,w*.14,h*.35,4,"#090d15");
+  // body
+  poly([[-w*.43,h*.57],[-w*.5,h*.2],[-w*.38,-h*.35],[-w*.25,-h*.52],
+    [w*.25,-h*.52],[w*.38,-h*.35],[w*.5,h*.2],[w*.43,h*.57]],color);
+  // windscreen
+  poly([[-w*.31,-h*.31],[-w*.22,-h*.46],[w*.22,-h*.46],[w*.31,-h*.31],
+    [w*.27,-h*.04],[-w*.27,-h*.04]],"#183a51");
+  // rear glass
+  poly([[-w*.27,h*.12],[w*.27,h*.12],[w*.23,h*.36],[-w*.23,h*.36]],"#102d40");
+  // windows and center divider
+  ctx.strokeStyle="#93b6ca";ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,-h*.46);ctx.lineTo(0,-h*.04);
+  ctx.moveTo(-w*.3,-h*.04);ctx.lineTo(w*.3,-h*.04);ctx.stroke();
+  // Headlights
+  roundedRect(-w*.39,h*.43,w*.18,h*.09,2,"#fff2c7");
+  roundedRect(w*.21,h*.43,w*.18,h*.09,2,"#fff2c7");
+  roundedRect(-w*.4,-h*.1,w*.13,h*.1,2,"#ff315e");
+  roundedRect(w*.27,-h*.1,w*.13,h*.1,2,"#ff315e");
+  if(isPlayer){
+    // People visible only inside the player's car
+    ctx.fillStyle=skin;
+    ctx.beginPath();ctx.arc(-w*.13,-h*.25,w*.085,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(w*.13,-h*.25,w*.085,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#192b46";
+    ctx.fillRect(-w*.21,-h*.15,w*.16,h*.12);
+    ctx.fillRect(w*.05,-h*.15,w*.16,h*.12);
+    // steering wheel
+    ctx.strokeStyle="#d4e8ef";ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(-w*.13,-h*.07,w*.075,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle="#ffffff";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(-w*.45,-h*.35);ctx.lineTo(-w*.3,-h*.35);ctx.stroke();
+    ctx.shadowColor=color;ctx.shadowBlur=14;
+    ctx.strokeStyle=color;ctx.lineWidth=2;
+    ctx.strokeRect(-w*.45,-h*.48,w*.9,h*1.02);
+    ctx.shadowBlur=0;
+  }
+  ctx.restore();
+}
+function projectTraffic(t){
+  let z=1-(t.z/2000);
+  if(z<0||z>1)return;
+  const x=laneX(t.lane,z);
+  const y=roadY(z);
+  const w=roadWidth(z)*.15*t.w;
+  const h=w*1.48;
+  drawCar(x,y,w,h,t.color,false);
+}
+function drawPlayer(){
+  const w=Math.min(W*.18,100),h=w*1.5;
+  const x=W/2+steering*W*.23;
+  const y=H*.80;
+  drawCar(x,y,w,h,carColor,true);
+  if(frame<emoteUntil){
+    ctx.font="25px Arial";ctx.textAlign="center";
+    ctx.fillText("😎",x,y-h*.85);
+  }
+}
+function update(){
+  if(!running||paused)return;
+  frame++;
+  const accel=gas||keys.ArrowUp||keys.KeyW;
+  const brake=braking||keys.ArrowDown||keys.KeyS||keys.Space;
+  if(accel)speed=Math.min(190,speed+.35);
+  else speed=Math.max(0,speed-.12);
+  if(brake)speed=Math.max(0,speed-1.15);
+  if(keys.ArrowLeft||keys.KeyA)steering=Math.max(-1,steering-.055);
+  else if(keys.ArrowRight||keys.KeyD)steering=Math.min(1,steering+.055);
+  else steering*=.91;
+  distance+=speed/3.6*.16;
+  metro.progress+=speed*.04;
+  for(const t of traffic){
+    t.z-=speed*.20;
+    if(t.z<-100){
+      t.z=rand(1500,2100);t.lane=Math.floor(rand(0,4));
+    }
+  }
+  // Basic collision response
+  for(const t of traffic){
+    if(t.z<125&&t.z>40&&Math.abs(t.lane-(1.5+steering*1.7))<.55){
+      speed=Math.max(0,speed-1.4);
+    }
+  }
+}
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawBackground();drawCity();drawRoad();drawFlyover();drawMetro();
+  const sorted=[...traffic].sort((a,b)=>b.z-a.z);
+  for(const t of sorted)projectTraffic(t);
+  drawPlayer();
+  if(running){
+    $("speed").innerHTML=Math.round(speed).toString().padStart(3,"0")+
+      ' <span style="font-size:12px">KM/H</span>';
+    $("distance").textContent="DISTANCE: "+Math.floor(distance)+" m";
+  }
+}
+function loop(){update();render();requestAnimationFrame(loop)}
+
+function startGame(){
+  running=true;paused=false;
+  $("overlay").classList.add("hidden");
+  $("hud").classList.remove("hidden");
+  $("controls").classList.remove("hidden");
+  $("notice").classList.remove("hidden");
+}
+function openMenu(){
+  paused=true;
+  $("overlay").classList.remove("hidden");
+  $("hud").classList.add("hidden");
+  $("controls").classList.add("hidden");
+  $("notice").classList.add("hidden");
+  $("start").textContent=running?"▶ RESUME DRIVING":"▶ START DRIVING";
+}
+$("start").addEventListener("click",()=>{
+  carColor=$("carColor").value;skin=$("character").value;
+  startGame();
+});
+$("menuBtn").addEventListener("click",openMenu);
+$("pause").addEventListener("click",()=>{
+  paused=!paused;
+  $("pause").textContent=paused?"▶ Play":"Ⅱ Pause";
+  $("notice").textContent=paused?"Game paused":"WASD / Arrow keys to drive";
+});
+$("emote").addEventListener("click",()=>{
+  emoteUntil=frame+160;
+  $("voiceInfo").textContent="😎 Your rider is showing an emote.";
+});
+$("horn").addEventListener("click",horn);
+function horn(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    const ac=new AC();
+    const osc=ac.createOscillator(),gain=ac.createGain();
+    osc.type="sawtooth";osc.frequency.value=220;
+    gain.gain.setValueAtTime(.12,ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.38);
+    osc.connect(gain);gain.connect(ac.destination);
+    osc.start();osc.stop(ac.currentTime+.4);
+    osc.onended=()=>ac.close();
+  }catch(e){}
+}
+$("voice").addEventListener("click",async()=>{
+  $("voiceInfo").textContent=
+    "Voice is multiplayer-only. A multiplayer server and spatial voice service must be connected; microphone access alone does not connect other players.";
+  // This demo does not transmit audio or claim to connect players.
+});
+
+addEventListener("keydown",e=>{
+  keys[e.code]=true;
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault();
+  if(e.code==="KeyH")horn();
+  if(e.code==="Escape"&&running){
+    paused=!paused;
+    $("pause").textContent=paused?"▶ Play":"Ⅱ Pause";
+  }
+});
+addEventListener("keyup",e=>{keys[e.code]=false});
+
+function holdButton(id,onDown,onUp){
+  const el=$(id);
+  const down=e=>{e.preventDefault();onDown()};
+  const up=e=>{e.preventDefault();onUp()};
+  el.addEventListener("pointerdown",down);
+  el.addEventListener("pointerup",up);
+  el.addEventListener("pointercancel",up);
+  el.addEventListener("pointerleave",up);
+}
+holdButton("left",()=>steering=-1,()=>{if(steering===-1)steering=0});
+holdButton("right",()=>steering=1,()=>{if(steering===1)steering=0});
+holdButton("gas",()=>gas=true,()=>gas=false);
+holdButton("brake",()=>braking=true,()=>braking=false);
+
+// Allow gamepad controllers and compatible TV remotes with arrow keys.
+function gamepadUpdate(){
+  const pads=navigator.getGamepads?navigator.getGamepads():[];
+  for(const p of pads){
+    if(!p)continue;
+    if(p.buttons[7]&&p.buttons[7].pressed)gas=true;
+    if(p.buttons[6]&&p.buttons[6].pressed)braking=true;
+    if(p.axes.length>0&&Math.abs(p.axes[0])>.2)steering=p.axes[0];
+  }
+}
+setInterval(()=>{
+  if(running&&!paused)gamepadUpdate();
+},80);
+
+resize();spawnTraffic();loop();
+})();
+</script>
+</body>
+</html>
